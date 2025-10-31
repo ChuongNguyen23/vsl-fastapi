@@ -1,0 +1,13 @@
+﻿venv/
+.venv/
+__pycache__/
+*.py[cod]
+Models/
+Models/checkpoints/
+*.keras
+*.h5
+*.pt
+*.pth
+.vscode/
+.DS_Store
+.env

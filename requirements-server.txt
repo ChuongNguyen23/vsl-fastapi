@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+python-multipart
+aiofiles
+opencv-python
+mediapipe==0.10.14
+tensorflow
+scipy
+numpy
+requests
