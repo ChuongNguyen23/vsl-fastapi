@@ -17,7 +17,7 @@ N_UPPER_BODY_POSE_LANDMARKS = 25
 N_HAND_LANDMARKS = 21
 N_TOTAL_LANDMARKS = N_UPPER_BODY_POSE_LANDMARKS + N_HAND_LANDMARKS * 2
 
-MODEL_LOCAL_PATH = os.environ.get("MODEL_LOCAL_PATH", "Models/checkpoints/final_model.keras")
+MODEL_LOCAL_PATH = os.environ.get("MODEL_LOCAL_PATH", "Models/checkpoints/final_model.h5")
 # Set your direct-download link here by ENV var or fallback
 MODEL_URL = os.environ.get("MODEL_URL",
     "https://drive.google.com/uc?export=download&id=1jIXbNFG4nl401WcNhv-FNMwNc3CvE4IR"
