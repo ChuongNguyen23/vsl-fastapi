@@ -15,7 +15,7 @@ N_TOTAL_LANDMARKS = N_UPPER_BODY_POSE_LANDMARKS + N_HAND_LANDMARKS * 2
 MODEL_LOCAL_PATH = os.environ.get("MODEL_LOCAL_PATH", "Models/checkpoints/final_model.h5")
 MODEL_URL = os.environ.get(
     "MODEL_URL",
-    "https://drive.google.com/uc?id=1jIXbNFG4nl401WcNhv-FNMwNc3CvE4IR"
+    "https://drive.google.com/file/d/1jIXbNFG4nl401WcNhv-FNMwNc3CvE4IR/view?usp=sharing"
 )
 
 def download_model_if_needed():
