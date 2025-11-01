@@ -1,4 +1,3 @@
-# server/predictor.py
 import os
 import json
 import numpy as np
@@ -9,7 +8,7 @@ from scipy.interpolate import interp1d
 import gdown
 
 # ======================
-# ⚙️ Cấu hình và hằng số
+# ⚙️ Cấu hình
 # ======================
 mp_holistic = mp.solutions.holistic
 N_UPPER_BODY_POSE_LANDMARKS = 25
@@ -25,13 +24,13 @@ MODEL_URL = "https://drive.google.com/uc?export=download&id=1jIXbNFG4nl401WcNhv-
 # ======================
 def download_model_if_needed():
     if os.path.exists(MODEL_LOCAL_PATH):
-        print("✅ Model found locally.")
+        print("✅ Model found locally, skipping download.")
         return MODEL_LOCAL_PATH
 
     os.makedirs(os.path.dirname(MODEL_LOCAL_PATH), exist_ok=True)
     print("⬇️ Downloading model from:", MODEL_URL)
     gdown.download(MODEL_URL, MODEL_LOCAL_PATH, quiet=False)
-    print("✅ Model downloaded.")
+    print("✅ Model downloaded successfully.")
     return MODEL_LOCAL_PATH
 
 
@@ -58,7 +57,7 @@ def load_model_and_labels():
 
 
 # ======================
-# 🧩 Các hàm xử lý video
+# 🧩 Hàm xử lý video
 # ======================
 def mediapipe_detection(image, holistic_model):
     """Chạy Mediapipe detection trên 1 frame"""
@@ -102,7 +101,7 @@ def interpolate_keypoints(sequence, target_len=60):
 
 
 # ======================
-# 🔍 Hàm chính dự đoán từ video
+# 🔍 Hàm chính dự đoán
 # ======================
 def predict_from_video(video_path):
     """Xử lý video đầu vào và dự đoán ký hiệu"""
@@ -120,7 +119,6 @@ def predict_from_video(video_path):
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     step = max(1, total // 100)
 
-    # ✅ Dùng context để tránh crash
     with mp_holistic.Holistic(
         static_image_mode=False,
         model_complexity=1,

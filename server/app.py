@@ -1,6 +1,8 @@
 import os
 import shutil
 import uuid
+import threading
+import time
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from server.predictor import predict_from_video, load_model_and_labels
@@ -8,9 +10,9 @@ from server.predictor import predict_from_video, load_model_and_labels
 # ========================
 # ⚙️ Khởi tạo FastAPI app
 # ========================
-app = FastAPI(title="VSL Prediction API")
+app = FastAPI(title="Vietnamese Sign Language Recognition API")
 
-# Cho phép Flutter gọi API
+# Cho phép Flutter gọi API (CORS)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # dev: *, production: ["https://ten-mien-cua-ban.com"]
@@ -24,7 +26,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 # ========================
-# 🚀 Khởi động server
+# 🧠 Khởi động server (load model 1 lần)
 # ========================
 @app.on_event("startup")
 def startup_event():
@@ -35,13 +37,23 @@ def startup_event():
     except Exception as e:
         print(f"❌ Failed to load model on startup: {e}")
 
+    # 🔁 Keep-alive thread để Render không kill container
+    def keep_alive():
+        while True:
+            print("💓 Server still alive...")
+            time.sleep(30)
+    threading.Thread(target=keep_alive, daemon=True).start()
+
 
 # ========================
-# 📡 API health check
+# 📡 Health check endpoint
 # ========================
 @app.get("/")
-def root():
-    return {"status": "ok", "message": "VSL FastAPI is running!"}
+def health_check():
+    return {
+        "status": "✅ Server is alive",
+        "message": "Vietnamese Sign Language FastAPI is running!",
+    }
 
 
 # ========================
@@ -49,13 +61,13 @@ def root():
 # ========================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    print("📩 File received:", file.filename)
+    print(f"📩 File received: {file.filename}")
 
-    filename = file.filename
-    if not filename:
+    # Kiểm tra định dạng file
+    if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    ext = os.path.splitext(filename)[1].lower()
+    ext = os.path.splitext(file.filename)[1].lower()
     if ext not in [".mp4", ".avi", ".mov", ".mkv"]:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 
@@ -63,31 +75,25 @@ async def predict(file: UploadFile = File(...)):
     file_path = os.path.join(UPLOAD_DIR, unique_name)
 
     try:
-        # Save file to server
+        # Lưu file tạm
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        print("✅ File saved at:", file_path)
+        print(f"✅ File saved at: {file_path}")
 
-        # Run prediction
+        # Dự đoán
         print("🔮 Starting prediction...")
         result = predict_from_video(file_path)
-        print("✅ Prediction completed:", result)
-
+        print(f"✅ Prediction completed: {result}")
         return result
 
     except Exception as e:
-        print("❌ ERROR while predicting:", str(e))
+        print(f"❌ ERROR during prediction: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
+        # Xóa file tạm sau khi xử lý
         try:
             os.remove(file_path)
             print("🧹 Temporary file deleted.")
         except Exception as e:
-            print("⚠️ File cleanup failed:", e)
-
-@app.get("/")
-def home():
-    return {"status": "ok", "message": "VSL FastAPI is running!"}
-
-
+            print(f"⚠️ File cleanup failed: {e}")
