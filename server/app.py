@@ -1,11 +1,15 @@
 import os
 import shutil
 import uuid
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+import threading
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from server.predictor import predict_from_video, load_model_and_labels
 
-app = FastAPI(title="VSL Prediction API (Async)")
+# ========================
+# ⚙️ Cấu hình FastAPI
+# ========================
+app = FastAPI(title="VSL Background Prediction API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,14 +20,19 @@ app.add_middleware(
 )
 
 UPLOAD_DIR = "uploads"
-RESULT_DIR = "results"
+RESULTS_DIR = "results"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(RESULT_DIR, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
-# Bộ nhớ tạm lưu kết quả xử lý
-TASK_RESULTS = {}
+# ========================
+# 🧠 Biến lưu trạng thái task
+# ========================
+tasks = {}  # task_id -> {"status": "processing" | "done" | "error", "result": {...}}
 
 
+# ========================
+# 🔄 Load model 1 lần
+# ========================
 @app.on_event("startup")
 def startup_event():
     print("🔄 Loading model on startup...")
@@ -31,22 +40,41 @@ def startup_event():
         load_model_and_labels()
         print("✅ Model loaded successfully!")
     except Exception as e:
-        print(f"❌ Failed to load model on startup: {e}")
-
-
-@app.get("/")
-def home():
-    return {"status": "ok", "message": "VSL FastAPI is running!"}
+        print(f"❌ Failed to load model: {e}")
 
 
 # ========================
-# 🚀 API upload video
+# 📡 Health check
+# ========================
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "VSL FastAPI running"}
+
+
+# ========================
+# 🧵 Hàm chạy nền xử lý video
+# ========================
+def process_video_in_background(task_id, file_path):
+    try:
+        print(f"🧠 Background task started: {task_id}")
+        result = predict_from_video(file_path)
+        tasks[task_id] = {"status": "done", "result": result}
+        print(f"✅ Task {task_id} done: {result}")
+    except Exception as e:
+        print(f"❌ Background error: {e}")
+        tasks[task_id] = {"status": "error", "result": {"error": str(e)}}
+    finally:
+        try:
+            os.remove(file_path)
+        except:
+            pass
+
+
+# ========================
+# 📤 Upload video (tạo task)
 # ========================
 @app.post("/upload")
-async def upload_video(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
-    """Nhận video và xử lý ngầm"""
-    print("📩 File received:", file.filename)
-
+async def upload_video(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
@@ -56,49 +84,25 @@ async def upload_video(file: UploadFile = File(...), background_tasks: Backgroun
 
     task_id = uuid.uuid4().hex
     file_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
-    result_path = os.path.join(RESULT_DIR, f"{task_id}.json")
 
-    # Lưu file
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Đánh dấu trạng thái ban đầu
-    TASK_RESULTS[task_id] = {"status": "processing", "result": None}
+    # Tạo record "processing"
+    tasks[task_id] = {"status": "processing", "result": None}
 
-    # Xử lý ngầm
-    background_tasks.add_task(run_prediction, file_path, result_path, task_id)
+    # Tạo luồng nền xử lý
+    thread = threading.Thread(target=process_video_in_background, args=(task_id, file_path))
+    thread.start()
 
     return {"task_id": task_id, "status": "processing"}
 
 
-def run_prediction(video_path: str, result_path: str, task_id: str):
-    """Chạy nhận dạng ngầm"""
-    try:
-        print(f"🔮 [TASK {task_id}] Starting prediction...")
-        result = predict_from_video(video_path)
-        TASK_RESULTS[task_id] = {"status": "done", "result": result}
-
-        # Lưu ra file (để kiểm tra lại)
-        with open(result_path, "w", encoding="utf-8") as f:
-            import json
-            json.dump(result, f, ensure_ascii=False, indent=2)
-
-        print(f"✅ [TASK {task_id}] Done: {result}")
-    except Exception as e:
-        TASK_RESULTS[task_id] = {"status": "error", "error": str(e)}
-        print(f"❌ [TASK {task_id}] Error: {e}")
-    finally:
-        try:
-            os.remove(video_path)
-        except:
-            pass
-
-
 # ========================
-# 📊 API lấy kết quả
+# 📥 Lấy kết quả theo task_id
 # ========================
 @app.get("/result/{task_id}")
 def get_result(task_id: str):
-    if task_id not in TASK_RESULTS:
-        raise HTTPException(status_code=404, detail="Task ID not found")
-    return TASK_RESULTS[task_id]
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return tasks[task_id]
