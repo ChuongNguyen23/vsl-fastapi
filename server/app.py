@@ -81,3 +81,6 @@ async def predict(file: UploadFile = File(...)):
             os.remove(file_path)
         except:
             pass
+@app.get("/")
+def home():
+    return {"status": "ok", "message": "VSL FastAPI is running!"}
