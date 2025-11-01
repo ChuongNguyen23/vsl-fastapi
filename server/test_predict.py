@@ -1,15 +1,13 @@
+# server/test_predict.py
 import requests
 
-API_URL = "https://vsl-fastapi.onrender.com/predict"
-VIDEO_PATH = r"C:\Users\nvchu\Desktop\a\Dataset\Videos\D0008.mp4"
-print("🎬 Sending video to server:", VIDEO_PATH)
+video_path = r"C:\Users\nvchu\Desktop\a\Dataset\Videos\D0008.mp4"
+url = "https://vsl-fastapi.onrender.com/predict"
 
-with open(VIDEO_PATH, "rb") as f:
-    files = {"file": (VIDEO_PATH, f, "video/mp4")}
-    response = requests.post(API_URL, files=files)
+print(f"🎬 Sending video to server: {video_path}")
+with open(video_path, "rb") as f:
+    files = {"file": ("test.mp4", f, "video/mp4")}
+    r = requests.post(url, files=files)
 
-print("📡 Status Code:", response.status_code)
-try:
-    print("🧩 Response JSON:", response.json())
-except:
-    print("⚠️ Raw Response:", response.text)
+print(f"📡 Status Code: {r.status_code}")
+print(f"⚙️ Response: {r.text}")
