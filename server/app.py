@@ -1,33 +1,29 @@
 import os
 import shutil
 import uuid
-import threading
-import time
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from server.predictor import predict_from_video, load_model_and_labels
 
-# ========================
-# ⚙️ Khởi tạo FastAPI app
-# ========================
-app = FastAPI(title="Vietnamese Sign Language Recognition API")
+app = FastAPI(title="VSL Prediction API (Async)")
 
-# Cho phép Flutter gọi API (CORS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # dev: *, production: ["https://ten-mien-cua-ban.com"]
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 UPLOAD_DIR = "uploads"
+RESULT_DIR = "results"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+os.makedirs(RESULT_DIR, exist_ok=True)
+
+# Bộ nhớ tạm lưu kết quả xử lý
+TASK_RESULTS = {}
 
 
-# ========================
-# 🧠 Khởi động server (load model 1 lần)
-# ========================
 @app.on_event("startup")
 def startup_event():
     print("🔄 Loading model on startup...")
@@ -37,33 +33,20 @@ def startup_event():
     except Exception as e:
         print(f"❌ Failed to load model on startup: {e}")
 
-    # 🔁 Keep-alive thread để Render không kill container
-    def keep_alive():
-        while True:
-            print("💓 Server still alive...")
-            time.sleep(30)
-    threading.Thread(target=keep_alive, daemon=True).start()
 
-
-# ========================
-# 📡 Health check endpoint
-# ========================
 @app.get("/")
-def health_check():
-    return {
-        "status": "✅ Server is alive",
-        "message": "Vietnamese Sign Language FastAPI is running!",
-    }
+def home():
+    return {"status": "ok", "message": "VSL FastAPI is running!"}
 
 
 # ========================
-# 🎥 API dự đoán video
+# 🚀 API upload video
 # ========================
-@app.post("/predict")
-async def predict(file: UploadFile = File(...)):
-    print(f"📩 File received: {file.filename}")
+@app.post("/upload")
+async def upload_video(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
+    """Nhận video và xử lý ngầm"""
+    print("📩 File received:", file.filename)
 
-    # Kiểm tra định dạng file
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
@@ -71,29 +54,51 @@ async def predict(file: UploadFile = File(...)):
     if ext not in [".mp4", ".avi", ".mov", ".mkv"]:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_name)
+    task_id = uuid.uuid4().hex
+    file_path = os.path.join(UPLOAD_DIR, f"{task_id}{ext}")
+    result_path = os.path.join(RESULT_DIR, f"{task_id}.json")
 
+    # Lưu file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Đánh dấu trạng thái ban đầu
+    TASK_RESULTS[task_id] = {"status": "processing", "result": None}
+
+    # Xử lý ngầm
+    background_tasks.add_task(run_prediction, file_path, result_path, task_id)
+
+    return {"task_id": task_id, "status": "processing"}
+
+
+def run_prediction(video_path: str, result_path: str, task_id: str):
+    """Chạy nhận dạng ngầm"""
     try:
-        # Lưu file tạm
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        print(f"✅ File saved at: {file_path}")
+        print(f"🔮 [TASK {task_id}] Starting prediction...")
+        result = predict_from_video(video_path)
+        TASK_RESULTS[task_id] = {"status": "done", "result": result}
 
-        # Dự đoán
-        print("🔮 Starting prediction...")
-        result = predict_from_video(file_path)
-        print(f"✅ Prediction completed: {result}")
-        return result
+        # Lưu ra file (để kiểm tra lại)
+        with open(result_path, "w", encoding="utf-8") as f:
+            import json
+            json.dump(result, f, ensure_ascii=False, indent=2)
 
+        print(f"✅ [TASK {task_id}] Done: {result}")
     except Exception as e:
-        print(f"❌ ERROR during prediction: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        TASK_RESULTS[task_id] = {"status": "error", "error": str(e)}
+        print(f"❌ [TASK {task_id}] Error: {e}")
     finally:
-        # Xóa file tạm sau khi xử lý
         try:
-            os.remove(file_path)
-            print("🧹 Temporary file deleted.")
-        except Exception as e:
-            print(f"⚠️ File cleanup failed: {e}")
+            os.remove(video_path)
+        except:
+            pass
+
+
+# ========================
+# 📊 API lấy kết quả
+# ========================
+@app.get("/result/{task_id}")
+def get_result(task_id: str):
+    if task_id not in TASK_RESULTS:
+        raise HTTPException(status_code=404, detail="Task ID not found")
+    return TASK_RESULTS[task_id]
