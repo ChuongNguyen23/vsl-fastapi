@@ -1,4 +1,6 @@
 import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"  # 0 = all logs, 3 = only fatal errors
+os.environ["CUDA_VISIBLE_DEVICES"] = ""   # disable GPU entirely
 import json
 import numpy as np
 import tensorflow as tf
