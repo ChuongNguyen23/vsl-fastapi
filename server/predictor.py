@@ -1,74 +1,68 @@
 import os
+import json
 import numpy as np
 import tensorflow as tf
 import cv2
 import mediapipe as mp
-import json
 from scipy.interpolate import interp1d
+from functools import lru_cache
 
-# ✅ Hằng số và cấu hình
+# ======================
+# ⚙️ Hằng số và cấu hình
+# ======================
 mp_holistic = mp.solutions.holistic
 N_UPPER_BODY_POSE_LANDMARKS = 25
 N_HAND_LANDMARKS = 21
 N_TOTAL_LANDMARKS = N_UPPER_BODY_POSE_LANDMARKS + N_HAND_LANDMARKS * 2
 
-MODEL_LOCAL_PATH = os.environ.get("MODEL_LOCAL_PATH", "Models/checkpoints/final_model.keras")
-MODEL_URL = os.environ.get(
-    "MODEL_URL",
-    "https://drive.google.com/file/d/1jIXbNFG4nl401WcNhv-FNMwNc3CvE4IR/view?usp=sharing"
-)
+MODEL_LOCAL_PATH = "Models/checkpoints/final_model.keras"
+LABEL_MAP_PATH = "Logs/label_map.json"
 
+
+# ======================
+# 📥 Tải model (Google Drive link)
+# ======================
 def download_model_if_needed():
-    """Tải model nếu chưa có (hỗ trợ link Google Drive)."""
     if os.path.exists(MODEL_LOCAL_PATH):
-        print(f"✅ Model found locally at {MODEL_LOCAL_PATH}")
+        print("✅ Model found locally.")
         return MODEL_LOCAL_PATH
 
     os.makedirs(os.path.dirname(MODEL_LOCAL_PATH), exist_ok=True)
-    print(f"⬇️ Downloading model from: {MODEL_URL}")
-
-    if "drive.google.com" in MODEL_URL:
-        import gdown
-        gdown.download(MODEL_URL, MODEL_LOCAL_PATH, fuzzy=True)
-    else:
-        import requests
-        r = requests.get(MODEL_URL, stream=True)
-        r.raise_for_status()
-        with open(MODEL_LOCAL_PATH, "wb") as f:
-            for chunk in r.iter_content(8192):
-                f.write(chunk)
-    print(f"✅ Model downloaded to {MODEL_LOCAL_PATH}")
+    MODEL_URL = "https://drive.google.com/uc?export=download&id=1jIXbNFG4nl401WcNhv-FNMwNc3CvE4IR"
+    print("⬇️ Downloading model from:", MODEL_URL)
+    import gdown
+    gdown.download(MODEL_URL, MODEL_LOCAL_PATH, quiet=False)
     return MODEL_LOCAL_PATH
 
 
-# ✅ Load model và label map
+# ======================
+# 🧠 Load model & label map chỉ 1 lần
+# ======================
 _model = None
-_label_map = None
 _inv_label_map = None
 
-def load_model_and_labels(label_map_path="Logs/label_map.json"):
-    global _model, _label_map, _inv_label_map
+def load_model_and_labels():
+    global _model, _inv_label_map
     if _model is not None:
         return
 
     model_path = download_model_if_needed()
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model still not found at {model_path}")
-
     print(f"📦 Loading model from {model_path} ...")
     _model = tf.keras.models.load_model(model_path)
 
-    with open(label_map_path, "r", encoding="utf-8") as f:
-        _label_map = json.load(f)
-    _inv_label_map = {v: k for k, v in _label_map.items()}
-    print("✅ Model and labels loaded successfully.")
+    with open(LABEL_MAP_PATH, "r", encoding="utf-8") as f:
+        label_map = json.load(f)
+    _inv_label_map = {v: k for k, v in label_map.items()}
+    print("✅ Model and label map loaded.")
 
 
-# ✅ Các hàm hỗ trợ nhận diện
-def mediapipe_detection(image, model):
+# ======================
+# 🧩 Hàm xử lý video
+# ======================
+def mediapipe_detection(image, holistic_model):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image.flags.writeable = False
-    results = model.process(image)
+    results = holistic_model.process(image)
     image.flags.writeable = True
     return cv2.cvtColor(image, cv2.COLOR_RGB2BGR), results
 
@@ -120,6 +114,7 @@ def predict_from_video(video_path):
             continue
         _, results = mediapipe_detection(frame, holistic)
         seq.append(extract_keypoints(results))
+
     cap.release()
     holistic.close()
 
@@ -129,4 +124,5 @@ def predict_from_video(video_path):
     kp = interpolate_keypoints(seq)
     pred = _model.predict(np.expand_dims(kp, axis=0))
     idx = int(np.argmax(pred))
-    return {"label": _inv_label_map.get(idx, str(idx)), "confidence": float(np.max(pred))}
+    confidence = float(np.max(pred))
+    return {"label": _inv_label_map.get(idx, str(idx)), "confidence": confidence}
