@@ -1,67 +1,42 @@
-# server/test_predict.py
 import requests
 import os
-import sys
-from pathlib import Path
 
-# --- CẬP NHẬT ĐÚNG URL API của bạn ở đây ---
+# ===========================
+# ⚙️ Cấu hình
+# ===========================
 API_URL = "https://vsl-fastapi.onrender.com/predict"
-# ----------------------------------------
 
-VIDEO_PATH = r"C:\Users\nvchu\Desktop\a\Dataset\Videos\D0008.mp4"  # chỉnh đường dẫn nếu cần
+# Đường dẫn video cần test — bạn đổi lại nếu muốn
+VIDEO_PATH = r"C:\Users\nvchu\Desktop\a\Dataset\Videos\D0008.mp4"
 
-def make_small_clone(src_path, max_seconds=3):
-    """
-    Nếu video quá lớn, bạn có thể tạo bản cắt ngắn để test (cần ffmpeg trên PATH).
-    Nếu không có ffmpeg, function trả về src_path.
-    """
-    try:
-        from subprocess import run, CalledProcessError
-        tmp = Path(src_path).with_suffix(".short.mp4")
-        cmd = ["ffmpeg", "-y", "-i", str(src_path), "-t", str(max_seconds), "-c", "copy", str(tmp)]
-        run(cmd, check=True, capture_output=True)
-        if tmp.exists():
-            print(f"✅ Created short test video: {tmp}")
-            return str(tmp)
-    except Exception as e:
-        print("ℹ️ ffmpeg not available or trimming failed:", e)
-    return src_path
+# ===========================
+# 🚀 Gửi video tới server
+# ===========================
+if not os.path.exists(VIDEO_PATH):
+    print("❌ Không tìm thấy file video:", VIDEO_PATH)
+    exit()
 
-def send_video(path):
-    print("🎬 Sending video to server:", path)
-    # dùng timeout lớn (120s) — nhưng render có giới hạn, nếu server xử lý lâu vẫn sẽ bị kill
-    timeout_seconds = 120
+print("🎬 Sending video to server:", VIDEO_PATH)
 
-    with open(path, "rb") as f:
-        files = {"file": (os.path.basename(path), f, "video/mp4")}
-        try:
-            # stream=True để không tải toàn bộ response vào bộ nhớ trước khi in ra
-            resp = requests.post(API_URL, files=files, timeout=timeout_seconds, stream=True)
-        except requests.exceptions.RequestException as e:
-            print("❌ Request failed:", repr(e))
-            return None
+try:
+    with open(VIDEO_PATH, "rb") as f:
+        files = {"file": (os.path.basename(VIDEO_PATH), f, "video/mp4")}
+        r = requests.post(API_URL, files=files, timeout=180)
 
-    print("📡 Status Code:", resp.status_code)
-    try:
-        # đọc và in body an toàn (nếu server trả chunked lởm thì vẫn cố gắng in phần đã nhận)
-        body = resp.content.decode(errors="replace")
-        print("⚙️ Response body:")
-        print(body)
-    except Exception as e:
-        print("⚠️ Could not decode response body:", e)
-        # Thử in phần text (requests.text có thể gây lại lỗi chunked)
-        try:
-            print(resp.text)
-        except Exception:
-            print("<no body available>")
+    print("📡 Status Code:", r.status_code)
 
-    return resp
+    if r.status_code == 200:
+        print("✅ Prediction result:")
+        print(r.json())
+    else:
+        print("⚠️ Server returned error:")
+        print(r.text)
 
-if __name__ == "__main__":
-    if not os.path.exists(VIDEO_PATH):
-        print("❗ File not found:", VIDEO_PATH)
-        sys.exit(1)
+except requests.exceptions.ConnectionError:
+    print("❌ Không thể kết nối tới API. Kiểm tra lại URL:", API_URL)
 
-    # thử tạo bản ngắn để test (bỏ comment nếu muốn cắt)
-    test_path = make_small_clone(VIDEO_PATH, max_seconds=3)
-    send_video(test_path)
+except requests.exceptions.Timeout:
+    print("⏱️ Quá thời gian chờ phản hồi từ server. Có thể model đang xử lý video dài.")
+
+except Exception as e:
+    print("❌ Lỗi không xác định:", str(e))
