@@ -49,10 +49,13 @@ def root():
 # ========================
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    if not file.filename:
+    print("📩 File received:", file.filename)
+
+    filename = file.filename
+    if not filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in [".mp4", ".avi", ".mov", ".mkv"]:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
 
@@ -60,27 +63,31 @@ async def predict(file: UploadFile = File(...)):
     file_path = os.path.join(UPLOAD_DIR, unique_name)
 
     try:
-        # Lưu file tạm
+        # Save file to server
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
+        print("✅ File saved at:", file_path)
 
-        print(f"📦 Received file: {file.filename}")
+        # Run prediction
+        print("🔮 Starting prediction...")
         result = predict_from_video(file_path)
+        print("✅ Prediction completed:", result)
 
-        if "error" in result:
-            raise HTTPException(status_code=500, detail=result["error"])
-
-        return {"status": "success", **result}
+        return result
 
     except Exception as e:
+        print("❌ ERROR while predicting:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
     finally:
-        # Dọn file sau khi xử lý
         try:
             os.remove(file_path)
-        except:
-            pass
+            print("🧹 Temporary file deleted.")
+        except Exception as e:
+            print("⚠️ File cleanup failed:", e)
+
 @app.get("/")
 def home():
     return {"status": "ok", "message": "VSL FastAPI is running!"}
+
+
