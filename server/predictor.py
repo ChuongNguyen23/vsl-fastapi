@@ -129,9 +129,10 @@ def predict_from_video(video_path):
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     ) as holistic:
+        MAX_FRAMES = 150  # Giới hạn chỉ xử lý tối đa 150 frame (~5–7 giây video)
         while cap.isOpened():
             ret, frame = cap.read()
-            if not ret:
+            if not ret or len(seq) >= MAX_FRAMES:
                 break
             if int(cap.get(cv2.CAP_PROP_POS_FRAMES)) % step != 0:
                 continue
